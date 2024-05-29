@@ -92,7 +92,7 @@ pub async fn get_user_data(user_token: &str) -> UserInfo{
 }
 
 /// Redirects the user to the Auth0 login page
-#[get("/auth0/login")]
+#[get("/auth0/login", rank=0)]
 pub async fn auth0_login() -> Redirect {
     println!("Redirecting to Auth0 login");
     let auth0_config = Auth0Config::load();
@@ -102,7 +102,7 @@ pub async fn auth0_login() -> Redirect {
 }
 
 /// Auth0 redirects here when it's ready. We exchange temp code for a JWT
-#[get("/auth0/callback?<code>")]
+#[get("/auth0/callback?<code>", rank=0)]
 pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     println!("Got auth0 callback");
 
@@ -143,7 +143,7 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     Redirect::to(user_page)
 }
 
-#[get("/auth0/user-data")]
+#[get("/auth0/user-data", rank=0)]
 pub async fn auth0_user_data(cookies: &CookieJar<'_>) -> String {
     if let Some(token) = cookies.get("polybrain-session") {
         let user_info = get_user_data(token.value()).await;
