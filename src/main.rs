@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use dotenv::dotenv;
 use rocket::fs::NamedFile;
 mod auth;
+mod error;
 
 #[get("/<_..>", rank = 5)]
 async fn fallback_url() -> Option<NamedFile> {

@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use crate::error::gen_trace;
+
+use super::error::{AuthenticationError, AuthorizationError};
 use reqwest;
 use rocket::http::CookieJar;
 use rocket::response::Redirect;
@@ -144,11 +147,11 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
 }
 
 #[get("/auth0/user-data", rank=0)]
-pub async fn auth0_user_data(cookies: &CookieJar<'_>) -> String {
+pub async fn auth0_user_data(cookies: &CookieJar<'_>) -> Result<String, AuthorizationError> {
     if let Some(token) = cookies.get("polybrain-session") {
         let user_info = get_user_data(token.value()).await;
-        serde_json::to_string_pretty(&user_info).unwrap()
+        Ok(serde_json::to_string_pretty(&user_info).unwrap())
     } else {
-        format!("You are not logged in")
+        Err(AuthorizationError::new("You must be logged in to view user data"))
     }
 }
