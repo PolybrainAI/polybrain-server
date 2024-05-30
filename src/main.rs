@@ -28,7 +28,7 @@ fn rocket() -> _ {
     dotenv().ok();
     rocket::build()
     .attach(auth::Cors)
-    .mount("/", routes![auth::auth0_login, auth::auth0_callback, auth::auth0_user_data])
+    .mount("/", routes![auth::auth0_login, auth::auth0_callback, auth::auth0_user_data, auth::auth0_logout])
     .mount("/static", routes![files,])
     .mount("/", routes![fallback_url,])
 }

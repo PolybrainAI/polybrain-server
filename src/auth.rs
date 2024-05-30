@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
 use super::error::AuthorizationError;
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
@@ -11,6 +7,10 @@ use rocket::tokio::time::{sleep, Duration};
 use rocket::Response;
 use rocket::{http::CookieJar, Request};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
 
 #[derive(Serialize)]
 struct TokenExchangeRequest {
@@ -172,6 +172,21 @@ pub async fn auth0_login() -> Redirect {
     println!("Redirecting to Auth0 login");
     let auth0_config = Auth0Config::load();
     let redirect_url = create_authorize_redirect_url(auth0_config);
+
+    Redirect::to(redirect_url)
+}
+
+/// Redirects the user to the Auth0 logout page
+#[get("/auth0/logout", rank = 0)]
+pub async fn auth0_logout() -> Redirect {
+    println!("Redirecting to Auth0 logout");
+    let auth0_config = Auth0Config::load();
+    let redirect_url = format!(
+        "https://{AUTH0_DOMAIN}/v2/logout?client_id={AUTH0_CLIENT_ID}&returnTo={LOGOUT_URL}",
+        AUTH0_DOMAIN = auth0_config.domain,
+        AUTH0_CLIENT_ID = auth0_config.client_id,
+        LOGOUT_URL = std::env::var("API_BASE").expect("API_BASE must be set.")
+    );
 
     Redirect::to(redirect_url)
 }
