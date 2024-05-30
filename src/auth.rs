@@ -1,11 +1,15 @@
 use std::collections::HashMap;
-
-use crate::error::gen_trace;
-
-use super::error::{AuthenticationError, AuthorizationError};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
+use super::error::AuthorizationError;
 use reqwest;
-use rocket::http::CookieJar;
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::Header;
 use rocket::response::Redirect;
+use rocket::tokio::time::{sleep, Duration};
+use rocket::Response;
+use rocket::{http::CookieJar, Request};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -27,17 +31,32 @@ struct TokenExchangeResponse {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserInfo {
-    pub sub: String,
+    pub sub: Option<String>,
     pub given_name: String,
     pub family_name: Option<String>,
-    pub nickname: String,
+    pub nickname: Option<String>,
     pub name: String,
     pub picture: Option<String>,
     pub email: String,
     pub locale: Option<String>,
-    pub updated_at: String,
+    pub updated_at: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Auth0Error {
+    error: String,
+    error_description: String,
+    error_uri: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum Auth0Response {
+    UserInfo(UserInfo),
+    Auth0Error(Auth0Error),
 }
 
 pub struct Auth0Config {
@@ -69,9 +88,31 @@ fn create_authorize_redirect_url(auth0_config: Auth0Config) -> String {
 }
 
 /// Gets Auth0 stored user data
-pub async fn get_user_data(user_token: &str) -> UserInfo{
-    let client = reqwest::Client::new();
 
+pub async fn get_user_data(user_token: &str) -> UserInfo {
+    // Load cache
+    let cache_path = ".user-info-cache.json";
+    let mut cache: HashMap<String, UserInfo> = if Path::new(cache_path).exists() {
+        let mut file = File::open(cache_path).expect("Failed to open cache file to read");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)
+            .expect("Failed to read cache file");
+        serde_json::from_str(&contents).expect("Failed to parse cache file")
+    } else {
+        // Create an empty cache if the file doesn't exist
+        // let mut cache_file = File::create(cache_path).expect("Failed to create a new cache file");
+        // cache_file.write("{}".as_bytes()).unwrap();
+        HashMap::new()
+    };
+
+    if let Some(user) = cache.get(user_token) {
+        println!("Found user in cache");
+        return user.to_owned();
+    } else {
+        println!("User does not exist in cache")
+    }
+
+    let client = reqwest::Client::new();
     let user_info_url = format!("https://{}/userinfo", Auth0Config::load().domain);
 
     let mut headers = HashMap::new();
@@ -79,23 +120,54 @@ pub async fn get_user_data(user_token: &str) -> UserInfo{
 
     println!("Getting user data with headers: {:?}", headers);
 
-    let user_info: UserInfo = client
-        .get(user_info_url)
-        .header("Authorization", format!("Bearer {user_token}"))
-        .send()
-        .await
-        .inspect_err(|err| eprintln!("Failed to fetch user info from Auth0: {err}"))
-        .unwrap()
-        .json()
-        .await
-        .inspect_err(|err| eprintln!("Failed to deserialize user info from Auth0: {err}"))
-        .unwrap();
+    for retry in 1..5 {
+        let user_info_raw = client
+            .get(&user_info_url)
+            .header("Authorization", format!("Bearer {user_token}"))
+            .send()
+            .await
+            .inspect_err(|err| eprintln!("Failed to fetch user info from Auth0: {err}"))
+            .unwrap()
+            .text()
+            .await
+            .expect("Unable to get Auth0 response as string");
 
-    user_info
+        println!("Auth0 responded with:\n {user_info_raw}");
+
+        let user_info_response: Auth0Response = serde_json::from_str(&user_info_raw).expect(
+            &format!("Auth0 responded with foreign response: {user_info_raw}"),
+        );
+
+        if let Auth0Response::UserInfo(info) = user_info_response {
+            println!("Adding user to cache");
+            cache.insert(user_token.to_owned(), info.clone());
+
+            let mut cache_file =
+                File::create(cache_path).expect("Failed to open cache file to write");
+            cache_file
+                .write_all(
+                    serde_json::to_string(&cache)
+                        .expect("Failed to serialize cache")
+                        .as_bytes(),
+                )
+                .expect("Failed to write to cache file");
+
+            println!("Sending user info: {:?}", info);
+            return info;
+        } else if let Auth0Response::Auth0Error(error) = user_info_response {
+            eprintln!(
+                "[{retry}/5] Auth0 responded with error: {}. Attempting with exponential backoff",
+                error.error_description
+            );
+            sleep(Duration::from_secs(u64::pow(retry, 2))).await;
+        }
+    }
+
+    panic!("Unable to reconcile Auth0 error!");
 }
 
 /// Redirects the user to the Auth0 login page
-#[get("/auth0/login", rank=0)]
+#[get("/auth0/login", rank = 0)]
 pub async fn auth0_login() -> Redirect {
     println!("Redirecting to Auth0 login");
     let auth0_config = Auth0Config::load();
@@ -105,7 +177,7 @@ pub async fn auth0_login() -> Redirect {
 }
 
 /// Auth0 redirects here when it's ready. We exchange temp code for a JWT
-#[get("/auth0/callback?<code>", rank=0)]
+#[get("/auth0/callback?<code>", rank = 0)]
 pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     println!("Got auth0 callback");
 
@@ -139,19 +211,49 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     cookies.add(("polybrain-session", token_response.access_token));
 
     let user_page = format!(
-        "{}/auth0/user-data",
+        "{}/portal",
         std::env::var("API_BASE").expect("API_BASE must be set.")
     );
     println!("Redirecting to {user_page}");
     Redirect::to(user_page)
 }
 
-#[get("/auth0/user-data", rank=0)]
+#[get("/auth0/user-data", rank = 0)]
 pub async fn auth0_user_data(cookies: &CookieJar<'_>) -> Result<String, AuthorizationError> {
     if let Some(token) = cookies.get("polybrain-session") {
         let user_info = get_user_data(token.value()).await;
         Ok(serde_json::to_string_pretty(&user_info).unwrap())
     } else {
-        Err(AuthorizationError::new("You must be logged in to view user data"))
+        Err(AuthorizationError::new(
+            "You must be logged in to view user data",
+        ))
+    }
+}
+
+pub struct Cors;
+
+#[rocket::async_trait]
+impl Fairing for Cors {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new(
+            "Access-Control-Allow-Origin",
+            "http://localhost:3000",
+        ));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, PATCH, OPTIONS",
+        ));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Headers",
+            "http://localhost:3000",
+        ));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
 }

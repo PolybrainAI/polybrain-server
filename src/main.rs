@@ -27,6 +27,7 @@ async fn files(file: PathBuf) -> Option<NamedFile> {
 fn rocket() -> _ {
     dotenv().ok();
     rocket::build()
+    .attach(auth::Cors)
     .mount("/", routes![auth::auth0_login, auth::auth0_callback, auth::auth0_user_data])
     .mount("/static", routes![files,])
     .mount("/", routes![fallback_url,])
