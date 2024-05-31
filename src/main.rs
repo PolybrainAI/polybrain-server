@@ -3,9 +3,10 @@ extern crate rocket;
 use std::path::{Path, PathBuf};
 
 use dotenv::dotenv;
-use rocket::fs::NamedFile;
+use rocket::{fs::NamedFile, tokio::sync::Mutex};
 mod auth;
 mod error;
+mod database;
 
 #[get("/<_..>", rank = 5)]
 async fn fallback_url() -> Option<NamedFile> {
@@ -24,11 +25,16 @@ async fn files(file: PathBuf) -> Option<NamedFile> {
 
 
 #[launch] 
-fn rocket() -> _ {
-    dotenv().ok();
+async fn rocket() -> _ {
+    dotenv().unwrap();
+
+    let mongo_util = database::MongoUtil::new().await.unwrap();
+
     rocket::build()
     .attach(auth::Cors)
     .mount("/", routes![auth::auth0_login, auth::auth0_callback, auth::auth0_user_data, auth::auth0_logout])
+    .mount("/", routes![database::credentials_upload, database::credentials_upload_preflight])
     .mount("/static", routes![files,])
     .mount("/", routes![fallback_url,])
+    .manage(Mutex::new(mongo_util))
 }

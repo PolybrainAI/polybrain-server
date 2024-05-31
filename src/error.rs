@@ -61,7 +61,7 @@ impl AuthenticationError {
         AuthenticationError {
             message: message.to_string(),
             trace: gen_trace(),
-            error_type: "AuthorizationError".to_owned(),
+            error_type: "AuthenticationError".to_owned(),
         }
     }
 }
@@ -92,7 +92,7 @@ impl InternalError {
             message: message.to_string(),
             operation: operation.to_string(),
             trace: gen_trace(),
-            error_type: "AuthorizationError".to_owned(),
+            error_type: "InternalError".to_owned(),
         }
     }
 }
@@ -103,8 +103,38 @@ impl<'r> Responder<'r, 'static> for InternalError {
     fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
         let json = self.to_json();
         Response::build()
+        .header(ContentType::JSON)
+        .status(Status::InternalServerError)
+        .sized_body(json.len(), Cursor::new(json))
+        .ok()
+    }
+}
+
+
+#[derive(Serialize, Debug)]
+pub struct BadRequest {
+    pub message: String,
+    pub trace: String,
+    pub error_type: String,
+}
+impl BadRequest {
+    pub fn new(message: &str) -> BadRequest {
+        BadRequest {
+            message: message.to_string(),
+            trace: gen_trace(),
+            error_type: "BadRequest".to_owned(),
+        }
+    }
+}
+impl PolybrainError for BadRequest {}
+
+#[rocket::async_trait]
+impl<'r> Responder<'r, 'static> for BadRequest {
+    fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
+        let json = self.to_json();
+        Response::build()
             .header(ContentType::JSON)
-            .status(Status::InternalServerError)
+            .status(Status::Unauthorized)
             .sized_body(json.len(), Cursor::new(json))
             .ok()
     }

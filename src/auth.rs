@@ -33,7 +33,7 @@ struct TokenExchangeResponse {
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserInfo {
-    pub sub: Option<String>,
+    pub sub: String,
     pub given_name: String,
     pub family_name: Option<String>,
     pub nickname: Option<String>,
@@ -59,6 +59,7 @@ enum Auth0Response {
     Auth0Error(Auth0Error),
 }
 
+#[derive(Debug)]
 pub struct Auth0Config {
     pub domain: String,
     pub client_id: String,
@@ -100,8 +101,6 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
         serde_json::from_str(&contents).expect("Failed to parse cache file")
     } else {
         // Create an empty cache if the file doesn't exist
-        // let mut cache_file = File::create(cache_path).expect("Failed to create a new cache file");
-        // cache_file.write("{}".as_bytes()).unwrap();
         HashMap::new()
     };
 
@@ -267,7 +266,7 @@ impl Fairing for Cors {
         ));
         response.set_header(Header::new(
             "Access-Control-Allow-Headers",
-            "http://localhost:3000",
+            "Content-Type",
         ));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
