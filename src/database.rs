@@ -1,14 +1,17 @@
+/*
+
+Database operations 
+
+*/
+
 
 use mongodb::{bson::doc, options::{ClientOptions, ServerApi, ServerApiVersion}, Client, Collection};
 use serde::Serialize;
 
-use crate::{auth::{get_user_data, Auth0Config, UserInfo}, error::BadRequest};
+use crate::{auth::{get_user_data, Auth0Config, UserInfo}, error::BadRequest, encryption::{encrypt, decrypt}};
 use rocket::{http::CookieJar, serde::{json::Json, Deserialize}, tokio::sync::Mutex};
 use rocket::State;
 use log::{info, warn};
-
-
-
 
 
 #[derive(Debug, Deserialize)]
@@ -19,7 +22,7 @@ struct UserUploadRequest {
 }
 
 #[derive(Debug)]
-enum CredentialType{
+pub enum CredentialType{
   OnshapeAccess(String),
   OnshapeSecret(String),
   OpenAiAPI(String)
@@ -43,7 +46,7 @@ impl UserDocumentCredentials{
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct UserDocument{
+pub struct UserDocument{
     user_id: String,
     email: String,
     credentials: UserDocumentCredentials
@@ -51,24 +54,19 @@ struct UserDocument{
 
 #[derive(Debug)]
 pub struct Auth0Manager{
-  config: Auth0Config
+  _config: Auth0Config
 }
 impl Auth0Manager{
   fn new() -> Self{
     Auth0Manager{
-      config: Auth0Config::load()
+      _config: Auth0Config::load()
     }
   }
 }
-
-
-pub struct SharedMongoUtil(pub Mutex<MongoUtil>);
-
-
 #[derive(Debug)]
 pub struct MongoUtil {
     mongo_client: Client,
-    auth0_client: Auth0Manager,
+    _auth0_client: Auth0Manager,
     user_collection: Collection<UserDocument>
 }
 
@@ -88,7 +86,7 @@ impl MongoUtil {
         let new_instance = MongoUtil{
           mongo_client,
           user_collection,
-          auth0_client: Auth0Manager::new()
+          _auth0_client: Auth0Manager::new()
       };
 
         new_instance.ping().await.expect("MongoDB ping failed");
@@ -143,13 +141,13 @@ impl MongoUtil {
       for credential_type in credential_updates{
         match credential_type{
           CredentialType::OnshapeAccess(token) => {
-            user.credentials.onshape_access = Some(token);
+            user.credentials.onshape_access = Some(encrypt(token.as_bytes()));
           }
           CredentialType::OnshapeSecret(token) => {
-            user.credentials.onshape_secret = Some(token);
+            user.credentials.onshape_secret = Some(encrypt(token.as_bytes()));
           }
           CredentialType::OpenAiAPI(token) => {
-            user.credentials.open_ai_api = Some(token);
+            user.credentials.open_ai_api = Some(encrypt(token.as_bytes()));
           }
         }
       }
@@ -192,7 +190,7 @@ pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRe
     if onshape_access.len() != 24{
       return Err(BadRequest::new("OnShape Access Key has an invalid format"));
     }
-    println!("Adding OnShape Access key to {}", user_info.email);
+    info!("adding OnShape Access key to {}", user_info.email);
     credential_uploads.push(CredentialType::OnshapeAccess(onshape_access.to_owned()));
   }
   if let Some(onshape_secret) = &data.onshape_secret{
@@ -200,18 +198,17 @@ pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRe
       return Err(BadRequest::new("OnShape Secret Key has an invalid format"));
     }
     
-    println!("Adding OnShape Secret key to {}", user_info.email);
+    info!("adding OnShape Secret key to {}", user_info.email);
     credential_uploads.push(CredentialType::OnshapeSecret(onshape_secret.to_owned()));
   }
   if let Some(openai_api) = &data.openai_api{
     if openai_api.len() != 51{
       return Err(BadRequest::new("OpenAI API key has an invalid format"));
     }
-    println!("Adding OpenAI API key to {}", user_info.email);
+    info!("adding OpenAI API key to {}", user_info.email);
     credential_uploads.push(CredentialType::OpenAiAPI(openai_api.to_owned()));
   }
 
-  info!("Uploading the following credentials: {:?}", credential_uploads);
   _ = mongo_util.lock().await.add_credentials(&user_info, credential_uploads).await;
 
   Ok("{\"success\": true}".to_owned())

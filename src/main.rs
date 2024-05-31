@@ -7,6 +7,7 @@ use rocket::{fs::NamedFile, tokio::sync::Mutex};
 mod auth;
 mod error;
 mod database;
+mod encryption;
 
 #[get("/<_..>", rank = 5)]
 async fn fallback_url() -> Option<NamedFile> {
