@@ -34,7 +34,7 @@ async fn rocket() -> _ {
     rocket::build()
     .attach(auth::Cors)
     .mount("/", routes![auth::auth0_login, auth::auth0_callback, auth::auth0_user_data, auth::auth0_logout])
-    .mount("/", routes![database::credentials_upload, database::credentials_upload_preflight])
+    .mount("/", routes![database::credentials_upload, database::credentials_upload_preflight, database::credentials_preview])
     .mount("/static", routes![files,])
     .mount("/", routes![fallback_url,])
     .manage(Mutex::new(mongo_util))

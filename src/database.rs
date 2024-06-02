@@ -8,7 +8,7 @@ Database operations
 use mongodb::{bson::doc, options::{ClientOptions, ServerApi, ServerApiVersion}, Client, Collection};
 use serde::Serialize;
 
-use crate::{auth::{get_user_data, Auth0Config, UserInfo}, error::BadRequest, encryption::{encrypt, decrypt}};
+use crate::{auth::{get_user_data, Auth0Config, UserInfo}, encryption::{decrypt, encrypt}, error::{BadRequest, PolybrainError}};
 use rocket::{http::CookieJar, serde::{json::Json, Deserialize}, tokio::sync::Mutex};
 use rocket::State;
 use log::{info, warn};
@@ -20,6 +20,24 @@ struct UserUploadRequest {
     onshape_secret: Option<String>,
     openai_api: Option<String>
 }
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct UserCredentialView {
+    has_onshape_access: bool,
+    has_onshape_secret: bool,
+    has_openai_api: bool
+}
+
+impl UserCredentialView{
+  pub fn all_false() -> UserCredentialView{
+    UserCredentialView{
+      has_onshape_access: false,
+      has_onshape_secret: false,
+      has_openai_api: false
+    }
+  }
+}
+
 
 #[derive(Debug)]
 pub enum CredentialType{
@@ -169,13 +187,8 @@ impl MongoUtil {
 #[post("/credentials/upload", data = "<data>")]
 pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRequest>, mongo_util: &State<Mutex<MongoUtil>>) -> Result<String, BadRequest> {
 
+  // Load the user
   let user_info: UserInfo;
-
-
-  println!("Inner ping:");
-  mongo_util.lock().await.ping().await.unwrap();
-  println!("Inner ping done!");
-
   if let Some(token) = cookies.get("polybrain-session") {
     user_info = get_user_data(token.value()).await;
   } else {
@@ -184,6 +197,7 @@ pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRe
       ));
   }
 
+  // Create a vector of credentials to upload
   let mut credential_uploads: Vec<CredentialType> = Vec::new();
 
   if let Some(onshape_access) = &data.onshape_access{
@@ -209,6 +223,7 @@ pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRe
     credential_uploads.push(CredentialType::OpenAiAPI(openai_api.to_owned()));
   }
 
+  // Upload credentials
   _ = mongo_util.lock().await.add_credentials(&user_info, credential_uploads).await;
 
   Ok("{\"success\": true}".to_owned())
@@ -217,3 +232,34 @@ pub async fn credentials_upload(cookies: &CookieJar<'_>, data: Json<UserUploadRe
 
 #[options("/credentials/upload")]
 pub async fn credentials_upload_preflight(){}
+
+
+#[get("/credentials/preview")]
+pub async fn credentials_preview(cookies: &CookieJar<'_>, mongo_util: &State<Mutex<MongoUtil>>) -> Result<String, BadRequest> {
+
+  // Load the user
+  let user_info: UserInfo;
+  if let Some(token) = cookies.get("polybrain-session") {
+    user_info = get_user_data(token.value()).await;
+  } else {
+      return Err(BadRequest::new(
+          "You must be logged in to view your credentials",
+      ));
+  }
+
+  // Iterate over different credential types
+  let mut user_preview = UserCredentialView::all_false();
+  let user_document = mongo_util.lock().await.get_user(&user_info.sub).await;
+
+  if let Some(user_document) = user_document{
+    user_preview.has_onshape_access = user_document.credentials.onshape_access.is_some();
+    user_preview.has_onshape_secret = user_document.credentials.onshape_secret.is_some();
+    user_preview.has_openai_api = user_document.credentials.open_ai_api.is_some();
+  }
+  else{
+    warn!("user requested info, but they do not exist in db. returning all false values for preview");
+  }
+  
+  Ok(serde_json::to_string_pretty(&user_preview).unwrap())
+
+}
