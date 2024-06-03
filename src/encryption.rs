@@ -1,8 +1,8 @@
 use aes::Aes128;
+use block_modes::block_padding::Pkcs7;
 use block_modes::BlockMode;
 use block_modes::Cbc;
-use block_modes::block_padding::Pkcs7;
-use hex::{encode, decode};
+use hex::{decode, encode};
 use sha2::{Digest, Sha256};
 
 // Type alias to simplify the code for using CBC mode with AES and Pkcs7 padding.
@@ -34,7 +34,6 @@ fn generate_key_iv() -> ([u8; 16], [u8; 16]) {
 }
 
 pub fn encrypt(data: &[u8]) -> String {
-
     let (key, iv) = generate_key_iv();
     let cipher = Aes128Cbc::new_from_slices(&key, &iv).expect("Failed to process cipher");
     let ciphertext = cipher.encrypt_vec(data);
@@ -44,12 +43,13 @@ pub fn encrypt(data: &[u8]) -> String {
 }
 
 pub fn decrypt(encrypted_data: &str) -> String {
-
     let (key, _) = generate_key_iv();
     let encrypted_data = decode(encrypted_data).unwrap();
     let (iv, encrypted_data) = encrypted_data.split_at(16);
     let cipher = Aes128Cbc::new_from_slices(&key, &iv).expect("Failed to process cipher");
-    let decrypted_data = cipher.decrypt_vec(encrypted_data).expect("Failed to decrypt key: decrypt_vec failed");
+    let decrypted_data = cipher
+        .decrypt_vec(encrypted_data)
+        .expect("Failed to decrypt key: decrypt_vec failed");
 
     String::from_utf8(decrypted_data).expect("Failed to decrypt key: could not assemble UTF-8")
 }

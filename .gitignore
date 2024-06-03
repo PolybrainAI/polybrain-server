@@ -1,3 +1,4 @@
 /target
 .env
-.user-info-cache.json
+.auth0-management-token-cache.json
+.auth0-user-cache.json

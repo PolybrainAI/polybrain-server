@@ -1,16 +1,21 @@
 use super::error::AuthorizationError;
+use chrono::{TimeZone, Utc};
+use log::info;
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::response::Redirect;
-use rocket::tokio::time::{sleep, Duration};
+use rocket::tokio::time::Duration;
 use rocket::Response;
 use rocket::{http::CookieJar, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
+
+const USER_CACHE_PATH: &str = "./.auth0-user-cache.json";
+const AUTH0_MANAGEMENT_TOKEN_CACHE: &str = "./.auth0-management-token-cache.json";
 
 #[derive(Serialize)]
 struct TokenExchangeRequest {
@@ -30,9 +35,8 @@ struct TokenExchangeResponse {
     token_type: String,
 }
 
-#[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct UserInfo {
+pub struct UserPreliminaryInfo {
     pub sub: String,
     pub given_name: Option<String>,
     pub username: Option<String>,
@@ -43,6 +47,20 @@ pub struct UserInfo {
     pub email: String,
     pub locale: Option<String>,
     pub updated_at: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserInfo {
+    pub created_at: String,
+    pub email: String,
+    pub name: String,
+    pub user_id: String,
+    pub username: Option<String>,
+    pub last_ip: String,
+    pub last_login: String,
+    pub given_name: Option<String>,
+
 }
 
 #[allow(dead_code)]
@@ -66,6 +84,25 @@ pub struct Auth0Config {
     pub client_id: String,
     pub callback: String,
     pub secret: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Auth0ManagementTokenSave {
+    token: String,
+    expires: usize,
+}
+#[derive(Debug, Deserialize)]
+pub struct Auth0ManagementTokenResponse {
+    access_token: String,
+    expires_in: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct Auth0ManagementTokenRequest {
+    grant_type: String,
+    client_id: String,
+    client_secret: String,
+    audience: String,
 }
 
 impl Auth0Config {
@@ -93,9 +130,8 @@ fn create_authorize_redirect_url(auth0_config: Auth0Config) -> String {
 
 pub async fn get_user_data(user_token: &str) -> UserInfo {
     // Load cache
-    let cache_path = ".user-info-cache.json";
-    let mut cache: HashMap<String, UserInfo> = if Path::new(cache_path).exists() {
-        let mut file = File::open(cache_path).expect("Failed to open cache file to read");
+    let mut cache: HashMap<String, UserInfo> = if Path::new(USER_CACHE_PATH).exists() {
+        let mut file = File::open(USER_CACHE_PATH).expect("Failed to open cache file to read");
         let mut contents = String::new();
         file.read_to_string(&mut contents)
             .expect("Failed to read cache file");
@@ -109,20 +145,13 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
         println!("Found user in cache");
         return user.to_owned();
     } else {
-        println!("User does not exist in cache")
-    }
+        println!("User does not exist in cache");
 
-    let client = reqwest::Client::new();
-    let user_info_url = format!("https://{}/userinfo", Auth0Config::load().domain);
-
-    let mut headers = HashMap::new();
-    headers.insert("Authorization", format!("Bearer {user_token}"));
-
-    println!("Getting user data with headers: {:?}", headers);
-
-    for retry in 1..5 {
-        let user_info_raw = client
-            .get(&user_info_url)
+        // First, fetch preliminary info to get user's id
+        let auth0_config = Auth0Config::load();
+        let client = reqwest::Client::new();
+        let user_preliminary_info_raw = client
+            .get(&format!("https://{}/userinfo", auth0_config.domain))
             .header("Authorization", format!("Bearer {user_token}"))
             .send()
             .await
@@ -131,39 +160,140 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
             .text()
             .await
             .expect("Unable to get Auth0 response as string");
+        let user_preliminary_info: UserPreliminaryInfo =
+            serde_json::from_str(&user_preliminary_info_raw)
+                .inspect_err(|_| {
+                    eprintln!(
+                        "Auth0 responded with an error or invalid format on UserPreliminaryInfo. Response is:\n{}",
+                        user_preliminary_info_raw
+                    )
+                })
+                .unwrap();
 
-        println!("Auth0 responded with:\n {user_info_raw}");
+        // Then, get the complete info using the user's id
+        let user_complete_info_raw = client
+            .get(&format!(
+                "https://{domain}/api/v2/users/{user_id}",
+                domain = auth0_config.domain,
+                user_id = user_preliminary_info.sub
+            ))
+            .bearer_auth(get_auth0_management_token().await)
+            .send()
+            .await
+            .expect("Call to management user endpoint failed")
+            .text()
+            .await
+            .unwrap();
 
-        let user_info_response: Auth0Response = serde_json::from_str(&user_info_raw).expect(
-            &format!("Auth0 responded with foreign response: {user_info_raw}"),
-        );
-
-        if let Auth0Response::UserInfo(info) = user_info_response {
-            println!("Adding user to cache");
-            cache.insert(user_token.to_owned(), info.clone());
-
-            let mut cache_file =
-                File::create(cache_path).expect("Failed to open cache file to write");
-            cache_file
-                .write_all(
-                    serde_json::to_string(&cache)
-                        .expect("Failed to serialize cache")
-                        .as_bytes(),
+        let mut user_info: UserInfo = serde_json::from_str(&user_complete_info_raw)
+            .inspect_err(|_| {
+                eprintln!(
+                    "Auth0 management API responded with an error or invalid format on UserInfo fetch. Response is:\n{}",
+                    user_complete_info_raw
                 )
-                .expect("Failed to write to cache file");
+            })
+            .unwrap();
 
-            println!("Sending user info: {:?}", info);
-            return info;
-        } else if let Auth0Response::Auth0Error(error) = user_info_response {
-            eprintln!(
-                "[{retry}/5] Auth0 responded with error: {}. Attempting with exponential backoff",
-                error.error_description
+        // Manipulate the user info response a bit to work with the React site
+        if user_info.username.is_none() {
+            let stepin_username = user_info.given_name.clone().unwrap_or(user_info.name.clone());
+            user_info.username = Some(stepin_username)
+
+        }
+
+        // Finally, write new info to the cache
+        cache.insert(user_token.to_string(), user_info.clone());
+        let cache_file = File::create(USER_CACHE_PATH)
+            .expect("Failed to open/create user cache file in write mode");
+        serde_json::to_writer_pretty(cache_file, &cache)
+            .expect("Failed to write user cache data to file");
+
+        user_info
+    }
+}
+
+/// Gets the Auth0 Management token. Fetches if saved token has expired or
+///     does not exist.
+///
+/// Returns:
+///     - The token as a String
+async fn get_auth0_management_token() -> String {
+    // Check to see if there is a saved token
+    let token_save_path = Path::new(AUTH0_MANAGEMENT_TOKEN_CACHE);
+    let mut token_container: Option<Auth0ManagementTokenSave> = None;
+
+    if token_save_path.exists() {
+        info!("A token already exists");
+
+        let token_file = File::open(token_save_path).expect("Could not read Auth0 token file");
+        let token_save: Auth0ManagementTokenSave = serde_json::from_reader(token_file)
+            .expect("The Auth0 management token save is misformed");
+        let expiration_date = Utc.timestamp_micros(token_save.expires as i64).unwrap();
+
+        if expiration_date < Utc::now() + Duration::from_secs(5 * 60) {
+            warn!("Auth0 management token has expired")
+        } else {
+            info!(
+                "Using existing Auth0 management token; expires in {} minutes",
+                (expiration_date - Utc::now()).num_minutes()
             );
-            sleep(Duration::from_secs(u64::pow(retry, 2))).await;
+            token_container = Some(token_save);
         }
     }
 
-    panic!("Unable to reconcile Auth0 error!");
+    if token_container.is_none() {
+        // Fetch a token from the API
+        let auth0_config = Auth0Config::load();
+
+        let token_request = Auth0ManagementTokenRequest {
+            grant_type: "client_credentials".to_owned(),
+            client_id: auth0_config.client_id,
+            client_secret: auth0_config.secret,
+            audience: format!("https://{}/api/v2/", auth0_config.domain),
+        };
+
+        let token_response_raw: String = reqwest::Client::new()
+            .post(format!(
+                "https://{AUTH0_DOMAIN}/oauth/token",
+                AUTH0_DOMAIN = auth0_config.domain
+            ))
+            .json(&token_request)
+            .send()
+            .await
+            .expect("Failed to get Auth0 management key")
+            .text()
+            .await
+            .expect("Failed to serialize Auth0 management API response for management key");
+
+        let token_response: Auth0ManagementTokenResponse = serde_json::from_str(
+            &token_response_raw,
+        )
+        .map_err(|_| {
+            println!(
+                "Failed to serialize response into Auth0ManagementTokenResponse:\nResponse is:\n{}",
+                token_response_raw
+            )
+        })
+        .unwrap();
+
+        // Write the response to the save file
+        let expiration_date = Utc::now() + Duration::from_secs(token_response.expires_in as u64);
+        let token_save = Auth0ManagementTokenSave {
+            token: token_response.access_token,
+            expires: expiration_date.timestamp_micros() as usize,
+        };
+
+        let token_file = File::create(token_save_path)
+            .expect("Failed open/create the Auth0 management token save file in write mode");
+        serde_json::to_writer(token_file, &token_save)
+            .expect("Failed to write new Auth0 management token save");
+
+        token_container = Some(token_save);
+
+        info!("Refreshed Auth0 management token");
+    }
+
+    return token_container.unwrap().token;
 }
 
 /// Redirects the user to the Auth0 login page
@@ -265,10 +395,7 @@ impl Fairing for Cors {
             "Access-Control-Allow-Methods",
             "POST, GET, PATCH, OPTIONS",
         ));
-        response.set_header(Header::new(
-            "Access-Control-Allow-Headers",
-            "Content-Type",
-        ));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "Content-Type"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
 }

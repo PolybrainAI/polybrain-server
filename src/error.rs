@@ -103,13 +103,12 @@ impl<'r> Responder<'r, 'static> for InternalError {
     fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
         let json = self.to_json();
         Response::build()
-        .header(ContentType::JSON)
-        .status(Status::InternalServerError)
-        .sized_body(json.len(), Cursor::new(json))
-        .ok()
+            .header(ContentType::JSON)
+            .status(Status::InternalServerError)
+            .sized_body(json.len(), Cursor::new(json))
+            .ok()
     }
 }
-
 
 #[derive(Serialize, Debug)]
 pub struct BadRequest {
