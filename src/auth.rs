@@ -1,4 +1,5 @@
 use super::error::AuthorizationError;
+use log::{info, debug, error};
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
@@ -11,6 +12,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::SystemTime;
+use chrono::{DateTime, Utc, TimeZone};
 
 #[derive(Serialize)]
 struct TokenExchangeRequest {
@@ -66,6 +69,17 @@ pub struct Auth0Config {
     pub client_id: String,
     pub callback: String,
     pub secret: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Auth0ManagementTokenSave {
+    token: String,
+    expires: usize,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Auth0ManagementTokenResponse {
+    access_token: String,
+    expires_in: usize,
 }
 
 impl Auth0Config {
@@ -165,6 +179,83 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
 
     panic!("Unable to reconcile Auth0 error!");
 }
+
+
+/// Gets the Auth0 Management token. Fetches if saved token has expired or
+///     does not exist.
+/// 
+/// Returns:
+///     - The token as a String
+pub async fn get_auth0_management_token() -> String{
+
+
+    // Check to see if there is a saved token
+    let token_save_path = Path::new(".auth0-management.json");
+    let mut token_container: Option<Auth0ManagementTokenSave> = None;
+
+
+    
+    if token_save_path.exists() {
+        info!("A token already exists");
+
+
+        let token_file = File::open(token_save_path).expect("Could not read Auth0 token file");
+        let token_save: Auth0ManagementTokenSave = serde_json::from_reader(token_file).expect("The Auth0 management token save is misformed");
+        let expiration_date = Utc.timestamp_micros(token_save.expires as i64).unwrap();
+
+        if expiration_date < Utc::now() + Duration::from_secs(5*60){
+            warn!("Auth0 management token has expired")
+        }
+        else {
+            info!("Using existing Auth0 management token; expires in {} minutes", (expiration_date - Utc::now()).num_minutes());
+            token_container = Some(token_save);
+        }
+
+    }
+
+    if token_container.is_none() {
+
+        // Fetch a token from the API
+        let auth0_config = Auth0Config::load();
+        let token_response: Auth0ManagementTokenResponse = reqwest::Client::new()
+        .post(format!("https://{AUTH0_DOMAIN}/oauth/token", AUTH0_DOMAIN=auth0_config.domain))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!("grant_type=client_credentials&\
+                    client_id={AUTH0_CLIENT_ID}&\
+                    client_secret=%7B{AUTH0_CLIENT_SECRET}%7D&audience=https%3A%2F%2F{AUTH0_DOMAIN}%2Fapi%2Fv2%2F",
+                    
+                    AUTH0_CLIENT_SECRET=auth0_config.secret,
+                    AUTH0_CLIENT_ID = auth0_config.client_id,
+                    AUTH0_DOMAIN = auth0_config.domain
+                ))
+        .send()
+        .await
+        .expect("Failed to get Auth0 management key")
+        .json()
+        .await
+        .expect("Failed to serialize Auth0 management API response for management key");
+
+        // Write the response to the save file
+
+        let expiration_date = Utc::now() + Duration::from_secs(token_response.expires_in as u64);
+
+        let token_save = Auth0ManagementTokenSave{
+            token: token_response.access_token,
+            expires: expiration_date.timestamp_micros() as usize
+        };
+
+        let token_file = File::create(token_save_path).expect("Failed open/create the Auth0 management token save file in write mode");
+        serde_json::to_writer(token_file, &token_save).expect("Failed to write new Auth0 management token save");
+
+        token_container = Some(token_save);
+            
+        info!("Refreshed Auth0 management token");
+    }
+
+    return token_container.unwrap().token
+
+}
+
 
 /// Redirects the user to the Auth0 login page
 #[get("/auth0/login", rank = 0)]
