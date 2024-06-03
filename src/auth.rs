@@ -34,7 +34,8 @@ struct TokenExchangeResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserInfo {
     pub sub: String,
-    pub given_name: String,
+    pub given_name: Option<String>,
+    pub username: Option<String>,
     pub family_name: Option<String>,
     pub nickname: Option<String>,
     pub name: String,
