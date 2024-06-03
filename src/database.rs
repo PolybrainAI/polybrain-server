@@ -13,8 +13,8 @@ use serde::Serialize;
 
 use crate::{
     auth::{get_user_data, Auth0Config, UserInfo},
-    encryption::{decrypt, encrypt},
-    error::{BadRequest, PolybrainError},
+    encryption::encrypt,
+    error::BadRequest,
 };
 use log::{info, warn};
 use rocket::State;
@@ -164,7 +164,7 @@ impl MongoUtil {
         target_user: &UserInfo,
         credential_updates: Vec<CredentialType>,
     ) -> Result<(), mongodb::error::Error> {
-        let user_id = &target_user.sub;
+        let user_id = &target_user.user_id;
 
         let mut user: UserDocument;
 
@@ -281,7 +281,7 @@ pub async fn credentials_preview(
 
     // Iterate over different credential types
     let mut user_preview = UserCredentialView::all_false();
-    let user_document = mongo_util.lock().await.get_user(&user_info.sub).await;
+    let user_document = mongo_util.lock().await.get_user(&user_info.user_id).await;
 
     if let Some(user_document) = user_document {
         user_preview.has_onshape_access = user_document.credentials.onshape_access.is_some();
