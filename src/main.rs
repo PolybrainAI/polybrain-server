@@ -47,7 +47,8 @@ async fn rocket() -> _ {
             routes![
                 database::credentials_upload,
                 database::credentials_upload_preflight,
-                database::credentials_preview
+                database::credentials_preview,
+                database::user_delete_self,
             ],
         )
         .mount("/static", routes![files,])

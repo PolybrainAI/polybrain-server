@@ -1,20 +1,22 @@
 use super::error::AuthorizationError;
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use log::info;
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::Header;
+use rocket::http::{ContentType, Header};
 use rocket::response::Redirect;
+use rocket::response::{self, Responder};
+use rocket::time::OffsetDateTime;
 use rocket::tokio::time::Duration;
 use rocket::Response;
 use rocket::{http::CookieJar, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::Path;
 
-const USER_CACHE_PATH: &str = "./.auth0-user-cache.json";
+pub const USER_CACHE_PATH: &str = "./.auth0-user-cache.json";
 const AUTH0_MANAGEMENT_TOKEN_CACHE: &str = "./.auth0-management-token-cache.json";
 
 #[derive(Serialize)]
@@ -33,6 +35,29 @@ struct TokenExchangeResponse {
     scope: String,
     expires_in: i64,
     token_type: String,
+}
+
+pub enum CompoundResponse {
+    Text(String),
+    Json(String),
+    Redirect(Redirect),
+}
+
+// Implement the Responder trait for CompoundResponse
+impl<'r> Responder<'r, 'static> for CompoundResponse {
+    fn respond_to(self, req: &Request<'_>) -> response::Result<'static> {
+        match self {
+            CompoundResponse::Text(text) => Response::build()
+                .header(ContentType::Plain)
+                .sized_body(text.len(), Cursor::new(text))
+                .ok(),
+            CompoundResponse::Json(json) => Response::build()
+                .header(ContentType::JSON)
+                .sized_body(json.len(), Cursor::new(json))
+                .ok(),
+            CompoundResponse::Redirect(redirect) => redirect.respond_to(req),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -60,7 +85,6 @@ pub struct UserInfo {
     pub last_ip: String,
     pub last_login: String,
     pub given_name: Option<String>,
-
 }
 
 #[allow(dead_code)]
@@ -127,8 +151,7 @@ fn create_authorize_redirect_url(auth0_config: Auth0Config) -> String {
 }
 
 /// Gets Auth0 stored user data
-
-pub async fn get_user_data(user_token: &str) -> UserInfo {
+pub async fn get_user_data(user_token: &str) -> Result<UserInfo, Box<dyn std::error::Error>> {
     // Load cache
     let mut cache: HashMap<String, UserInfo> = if Path::new(USER_CACHE_PATH).exists() {
         let mut file = File::open(USER_CACHE_PATH).expect("Failed to open cache file to read");
@@ -143,7 +166,7 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
 
     if let Some(user) = cache.get(user_token) {
         println!("Found user in cache");
-        return user.to_owned();
+        return Ok(user.to_owned());
     } else {
         println!("User does not exist in cache");
 
@@ -154,12 +177,11 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
             .get(&format!("https://{}/userinfo", auth0_config.domain))
             .header("Authorization", format!("Bearer {user_token}"))
             .send()
-            .await
-            .inspect_err(|err| eprintln!("Failed to fetch user info from Auth0: {err}"))
-            .unwrap()
+            .await?
             .text()
             .await
             .expect("Unable to get Auth0 response as string");
+
         let user_preliminary_info: UserPreliminaryInfo =
             serde_json::from_str(&user_preliminary_info_raw)
                 .inspect_err(|_| {
@@ -167,8 +189,7 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
                         "Auth0 responded with an error or invalid format on UserPreliminaryInfo. Response is:\n{}",
                         user_preliminary_info_raw
                     )
-                })
-                .unwrap();
+                })?;
 
         // Then, get the complete info using the user's id
         let user_complete_info_raw = client
@@ -196,9 +217,11 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
 
         // Manipulate the user info response a bit to work with the React site
         if user_info.username.is_none() {
-            let stepin_username = user_info.given_name.clone().unwrap_or(user_info.name.clone());
+            let stepin_username = user_info
+                .given_name
+                .clone()
+                .unwrap_or(user_info.name.clone());
             user_info.username = Some(stepin_username)
-
         }
 
         // Finally, write new info to the cache
@@ -208,7 +231,7 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
         serde_json::to_writer_pretty(cache_file, &cache)
             .expect("Failed to write user cache data to file");
 
-        user_info
+        Ok(user_info)
     }
 }
 
@@ -217,7 +240,7 @@ pub async fn get_user_data(user_token: &str) -> UserInfo {
 ///
 /// Returns:
 ///     - The token as a String
-async fn get_auth0_management_token() -> String {
+pub async fn get_auth0_management_token() -> String {
     // Check to see if there is a saved token
     let token_save_path = Path::new(AUTH0_MANAGEMENT_TOKEN_CACHE);
     let mut token_container: Option<Auth0ManagementTokenSave> = None;
@@ -265,16 +288,15 @@ async fn get_auth0_management_token() -> String {
             .await
             .expect("Failed to serialize Auth0 management API response for management key");
 
-        let token_response: Auth0ManagementTokenResponse = serde_json::from_str(
-            &token_response_raw,
-        )
-        .map_err(|_| {
-            println!(
+        let token_response: Auth0ManagementTokenResponse =
+            serde_json::from_str(&token_response_raw)
+                .map_err(|_| {
+                    println!(
                 "Failed to serialize response into Auth0ManagementTokenResponse:\nResponse is:\n{}",
                 token_response_raw
             )
-        })
-        .unwrap();
+                })
+                .unwrap();
 
         // Write the response to the save file
         let expiration_date = Utc::now() + Duration::from_secs(token_response.expires_in as u64);
@@ -308,8 +330,14 @@ pub async fn auth0_login() -> Redirect {
 
 /// Redirects the user to the Auth0 logout page
 #[get("/auth0/logout", rank = 0)]
-pub async fn auth0_logout() -> Redirect {
-    println!("Redirecting to Auth0 logout");
+pub async fn auth0_logout(cookies: &CookieJar<'_>,) -> Redirect {
+
+    info!("Removing token");
+    if let Some(cookie) = cookies.get("polybrain-session") {
+        cookies.remove(cookie.to_owned());
+        };
+
+    info!("Redirecting to Auth0 logout");
     let auth0_config = Auth0Config::load();
     let redirect_url = format!(
         "https://{AUTH0_DOMAIN}/v2/logout?client_id={AUTH0_CLIENT_ID}&returnTo={LOGOUT_URL}",
@@ -364,10 +392,23 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
 }
 
 #[get("/auth0/user-data", rank = 0)]
-pub async fn auth0_user_data(cookies: &CookieJar<'_>) -> Result<String, AuthorizationError> {
+pub async fn auth0_user_data(
+    cookies: &CookieJar<'_>,
+) -> Result<CompoundResponse, AuthorizationError> {
     if let Some(token) = cookies.get("polybrain-session") {
         let user_info = get_user_data(token.value()).await;
-        Ok(serde_json::to_string_pretty(&user_info).unwrap())
+
+        if let Ok(info) = &user_info {
+            Ok(CompoundResponse::Text(
+                serde_json::to_string_pretty(info).unwrap(),
+            ))
+        } else {
+            warn!("User has an invalid token. Logging out.");
+            Ok(CompoundResponse::Redirect(Redirect::to(format!(
+                "{API_BASE}/auth0/logout",
+                API_BASE = std::env::var("API_BASE").expect("API_BASE must be set.")
+            ))))
+        }
     } else {
         Err(AuthorizationError::new(
             "You must be logged in to view user data",
