@@ -6,8 +6,7 @@ use dotenv::dotenv;
 use rocket::{fs::NamedFile, tokio::sync::Mutex};
 mod auth;
 mod database;
-mod encryption;
-mod error;
+mod util;
 
 #[get("/<_..>", rank = 5)]
 async fn fallback_url() -> Option<NamedFile> {
@@ -29,26 +28,26 @@ async fn files(file: PathBuf) -> Option<NamedFile> {
 async fn rocket() -> _ {
     dotenv().unwrap();
 
-    let mongo_util = database::MongoUtil::new().await.unwrap();
+    let mongo_util = database::util::MongoUtil::new().await.unwrap();
 
     rocket::build()
-        .attach(auth::Cors)
+        .attach(auth::util::Cors)
         .mount(
             "/",
             routes![
-                auth::auth0_login,
-                auth::auth0_callback,
-                auth::auth0_user_data,
-                auth::auth0_logout
+                auth::endpoints::auth0_login,
+                auth::endpoints::auth0_callback,
+                auth::endpoints::auth0_user_data,
+                auth::endpoints::auth0_logout
             ],
         )
         .mount(
             "/",
             routes![
-                database::credentials_upload,
-                database::credentials_upload_preflight,
-                database::credentials_preview,
-                database::user_delete_self,
+                database::endpoints::credentials_upload,
+                database::endpoints::credentials_upload_preflight,
+                database::endpoints::credentials_preview,
+                database::endpoints::user_delete_self,
             ],
         )
         .mount("/static", routes![files,])

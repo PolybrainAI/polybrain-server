@@ -39,14 +39,14 @@ pub fn encrypt(data: &[u8]) -> String {
     let ciphertext = cipher.encrypt_vec(data);
 
     // Encode ciphertext as hexadecimal and prepend IV in hex for simplicity
-    encode(iv) + &encode(&ciphertext)
+    encode(iv) + &encode(ciphertext)
 }
 
-pub fn decrypt(encrypted_data: &str) -> String {
+pub fn _decrypt(encrypted_data: &str) -> String {
     let (key, _) = generate_key_iv();
     let encrypted_data = decode(encrypted_data).unwrap();
     let (iv, encrypted_data) = encrypted_data.split_at(16);
-    let cipher = Aes128Cbc::new_from_slices(&key, &iv).expect("Failed to process cipher");
+    let cipher = Aes128Cbc::new_from_slices(&key, iv).expect("Failed to process cipher");
     let decrypted_data = cipher
         .decrypt_vec(encrypted_data)
         .expect("Failed to decrypt key: decrypt_vec failed");
