@@ -4,25 +4,33 @@ Database operations
 
 */
 
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Read,
+    path::Path,
+};
+
 use mongodb::{
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion},
     Client, Collection,
 };
+use reqwest::StatusCode;
 use serde::Serialize;
 
 use crate::{
-    auth::{get_user_data, Auth0Config, UserInfo},
+    auth::{get_auth0_management_token, get_user_data, Auth0Config, UserInfo, USER_CACHE_PATH},
     encryption::encrypt,
     error::BadRequest,
 };
 use log::{info, warn};
-use rocket::State;
 use rocket::{
     http::CookieJar,
-    serde::{json::Json, Deserialize},
+    serde::{self, json::Json, Deserialize},
     tokio::sync::Mutex,
 };
+use rocket::{response::Redirect, State};
 
 #[derive(Debug, Deserialize)]
 struct UserUploadRequest {
@@ -159,6 +167,23 @@ impl MongoUtil {
         Ok(())
     }
 
+    /// Deletes a user from mongo
+    pub async fn delete_user(&self, user_id: &str) -> bool {
+        let filter = doc! {"user_id": user_id};
+        let result = self
+            .user_collection
+            .delete_one(filter.clone(), None)
+            .await
+            .expect("Fatal MongoDB error on user query");
+        if result.deleted_count > 0 {
+            info!("Successfully deleted user {user_id} contents from MongoDB");
+            true
+        } else {
+            warn!("Unable to delete user {user_id} contents from MongoDB. Does the user exist?");
+            false
+        }
+    }
+
     pub async fn add_credentials(
         &mut self,
         target_user: &UserInfo,
@@ -220,7 +245,12 @@ pub async fn credentials_upload(
     // Load the user
     let user_info: UserInfo;
     if let Some(token) = cookies.get("polybrain-session") {
-        user_info = get_user_data(token.value()).await;
+        user_info = match get_user_data(token.value()).await {
+            Ok(i) => i,
+            Err(_) => {
+                return Err(BadRequest::new("Bad Credentials"))
+            }
+        };
     } else {
         return Err(BadRequest::new("You must be logged in to upload data"));
     }
@@ -272,7 +302,7 @@ pub async fn credentials_preview(
     // Load the user
     let user_info: UserInfo;
     if let Some(token) = cookies.get("polybrain-session") {
-        user_info = get_user_data(token.value()).await;
+        user_info = get_user_data(token.value()).await.unwrap();
     } else {
         return Err(BadRequest::new(
             "You must be logged in to view your credentials",
@@ -292,4 +322,82 @@ pub async fn credentials_preview(
     }
 
     Ok(serde_json::to_string_pretty(&user_preview).unwrap())
+}
+
+#[get("/user/delete-self")]
+pub async fn user_delete_self(
+    cookies: &CookieJar<'_>,
+    mongo_util: &State<Mutex<MongoUtil>>,
+) -> Result<Redirect, BadRequest> {
+    // Load the user
+    let user_info: UserInfo;
+    let user_token: &str;
+    if let Some(token) = cookies.get("polybrain-session") {
+        user_info = get_user_data(token.value()).await.unwrap();
+        user_token = token.value();
+    } else {
+        return Err(BadRequest::new(
+            "Session token must be present to identify user for deletion",
+        ));
+    }
+
+    // Delete user from Mongodb
+    mongo_util
+        .lock()
+        .await
+        .delete_user(&user_info.user_id)
+        .await;
+
+    // Delete user from Auth0 db
+    let delete_response = reqwest::Client::new()
+        .delete(&format!(
+            "https://{domain}/api/v2/users/{user_id}",
+            domain = Auth0Config::load().domain,
+            user_id = user_info.user_id
+        ))
+        .bearer_auth(get_auth0_management_token().await)
+        .send()
+        .await
+        .expect("Call to management user endpoint failed");
+
+    match delete_response.status() {
+        StatusCode::NO_CONTENT => {
+            info!("Successfully deleted user {} from Auth0", user_info.user_id)
+        }
+        _ => {
+            let status_code = delete_response.status().as_u16();
+            let response_text = delete_response.text().await.unwrap();
+            error!(
+                "Unable to delete user {user_id} from Auth0. Got <{err_code}> code Error:\n{err}",
+                user_id = user_info.user_id,
+                err_code = status_code,
+                err = response_text
+            )
+        }
+    }
+
+    // Remove user from cache
+    if Path::new(USER_CACHE_PATH).exists() {
+        let mut file_read = File::open(USER_CACHE_PATH).expect("Failed to open cache file to read");
+        let mut contents = String::new();
+        file_read.read_to_string(&mut contents)
+        .expect("Failed to read cache file");
+        drop(file_read); // close the file to help w io errors
+        
+        let file_write = File::create(USER_CACHE_PATH).expect("Failed to open cache file to read");
+        let mut cache: HashMap<String, UserInfo> =
+            serde_json::from_str(&contents).expect("Failed to parse cache file");
+        cache.remove(user_token);
+
+        serde_json::to_writer_pretty(file_write, &cache)
+            .expect("Failed to write updated user cache back to file");
+        info!("Successfully removed user from cache")
+    }
+
+    
+
+    Ok(Redirect::to(format!(
+        "{API_BASE}/auth0/logout",
+        API_BASE = std::env::var("API_BASE").expect("API_BASE must be set.")
+    )))
 }
