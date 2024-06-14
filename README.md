@@ -44,6 +44,8 @@ AES128 is an industry standard for encryption; even if a hacker could breach the
 
 The machine that runs Polybrain Server disables password authentication and runs [fail2ban](https://github.com/fail2ban/fail2ban), which has been trusted for 19 years to help crack down on malicious login attempts.
 
+There is also an alarm system that instantly notifies the admin of each login.
+
 ## Contributing
 
 This repo should be little maintenance; the bulk of the changes will be to the polybrain-core repo, where the actual polybrain logic is executed.
