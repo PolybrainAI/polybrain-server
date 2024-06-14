@@ -1,3 +1,12 @@
+/*
+
+Exposed Database Endpoints
+Endpoint handles that interface with the MongoClient (in ./util.rs)
+
+Copyright Polybrain 2024
+
+*/
+
 use crate::{
     auth::types::{Auth0Config, UserInfo},
     database::{types::UserUploadRequest, util::MongoUtil},

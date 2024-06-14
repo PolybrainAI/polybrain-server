@@ -1,3 +1,12 @@
+/*
+
+Auth Type Definitions
+Different Auth0 and Polybrain response schemas are defined here
+
+Copyright Polybrain 2024
+
+*/
+
 use rocket::http::ContentType;
 use rocket::response::Redirect;
 use rocket::response::{self, Responder};

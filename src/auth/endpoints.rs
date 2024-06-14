@@ -1,3 +1,12 @@
+/*
+
+Exposed endpoints for Polybrain authentication
+Interfaces with Auth utilities (./util.rs) to complete user authentication
+
+Copyright Polybrain 2024
+
+*/
+
 use log::info;
 use reqwest;
 use rocket::http::CookieJar;

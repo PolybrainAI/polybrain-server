@@ -1,3 +1,12 @@
+/*
+
+MongoDB Types
+Different types that are stored in the DB
+
+Copyright Polybrain 2024
+
+*/
+
 use serde::{Deserialize, Serialize};
 
 use crate::auth::types::Auth0Config;

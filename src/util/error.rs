@@ -1,3 +1,11 @@
+/*
+
+Error definitions
+
+Copyright Polybrain 2024
+
+*/
+
 use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};

@@ -1,6 +1,9 @@
 /*
 
-Database operations
+MongoDB Utility
+Wraps database operations with Polybrain schema
+
+Copyright Polybrain 2024
 
 */
 

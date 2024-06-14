@@ -1,3 +1,12 @@
+/*
+
+Rocket Entry Point
+Connects all handles to main rocket instance
+
+Copyright Polybrain 2024
+
+*/
+
 #[macro_use]
 extern crate rocket;
 use std::path::{Path, PathBuf};

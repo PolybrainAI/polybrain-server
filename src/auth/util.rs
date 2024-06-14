@@ -1,3 +1,12 @@
+/*
+
+Auth Utility Functions
+Different Auth0 and other miscellaneous authentication functions
+
+Copyright Polybrain 2024
+
+*/
+
 use chrono::{TimeZone, Utc};
 use log::info;
 use reqwest;

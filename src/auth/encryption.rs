@@ -1,3 +1,12 @@
+/*
+
+Encryption Utility
+Used to encrypt user API keys
+
+Copyright Polybrain 2024
+
+*/
+
 use aes::Aes128;
 use block_modes::block_padding::Pkcs7;
 use block_modes::BlockMode;
