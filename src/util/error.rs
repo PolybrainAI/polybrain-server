@@ -1,3 +1,12 @@
+/*
+
+Error definitions
+
+Copyright Polybrain 2024
+
+*/
+
+use log::error;
 use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
@@ -8,7 +17,7 @@ use uuid::Uuid;
 // Creates a random traceid and sends it to the STDOUT
 pub fn gen_trace() -> String {
     let trace_id = Uuid::new_v4().to_string();
-    println!("TRACE_ID: {trace_id}");
+    error!("TRACE_ID: {trace_id}");
     trace_id
 }
 
@@ -57,7 +66,7 @@ pub struct AuthenticationError {
     pub error_type: String,
 }
 impl AuthenticationError {
-    pub fn new(message: &str) -> AuthenticationError {
+    pub fn _new(message: &str) -> AuthenticationError {
         AuthenticationError {
             message: message.to_string(),
             trace: gen_trace(),
@@ -87,7 +96,7 @@ pub struct InternalError {
     pub error_type: String,
 }
 impl InternalError {
-    pub fn new(message: &str, operation: &str) -> InternalError {
+    pub fn _new(message: &str, operation: &str) -> InternalError {
         InternalError {
             message: message.to_string(),
             operation: operation.to_string(),
