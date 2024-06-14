@@ -3,3 +3,4 @@
 .auth0-management-token-cache.json
 .auth0-user-cache.json
 .DS_Store
+server.log
