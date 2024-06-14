@@ -2,6 +2,23 @@
 
 Server for Polybrain's website and chrome plugin.
 
+## Running
+
+Install just:
+
+```sh
+cargo install just
+```
+
+You can start and stop the server with:
+
+```sh
+just start # start the server
+just stop # stop the server
+```
+
+The server logs will store in `server.log`.
+
 ## Authentication
 
 Polybrain uses [Auth0](https://auth0.com/) to manage authentication. This means that all the heavy
@@ -14,7 +31,6 @@ The following describes the workflow to authenticate with Auth0
 Upon account creation, Auth0 stores a user in their own database. Auth0 offers a separate set of API calls to interface their management API—which allows Polybrain to use Auth0 for the entire user management process.
 
 Auth0 related endpoints are defined in [src/auth/endpoints.rs](src/auth/endpoints.rs).
-
 
 ## API Key Security
 
@@ -30,10 +46,8 @@ The machine that runs Polybrain Server disables password authentication and runs
 
 ## Contributing
 
-This repo should be little maintenance; the bulk of the changes will be to the polybrain-core repo, where the actual polybrain logic is executed. 
+This repo should be little maintenance; the bulk of the changes will be to the polybrain-core repo, where the actual polybrain logic is executed.
 
 There are no strict guidelines for contributing to this project. All contributions are welcomed.
 
-If you believe you have discovered a security vulnerability, do not hesitate to contact kyletennison05@gmail.com.
-
-
+If you believe you have discovered a security vulnerability, do not hesitate to contact [kyletennison05@gmail.com](mailto:kyletennison05@gmail.com).
