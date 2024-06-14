@@ -17,6 +17,7 @@ mod auth;
 mod database;
 mod util;
 
+/// Redirect all requests with no match to react for client-side routing
 #[get("/<_..>", rank = 5)]
 async fn fallback_url() -> Option<NamedFile> {
     let build_env = std::env::var("REACT_BUILD").expect("REACT_BUILD must be set");
@@ -24,6 +25,7 @@ async fn fallback_url() -> Option<NamedFile> {
     NamedFile::open(build_index.join("index.html")).await.ok()
 }
 
+/// Serve files from react dist
 #[get("/<file..>", rank = 4)]
 async fn files(file: PathBuf) -> Option<NamedFile> {
     let build_env = std::env::var("REACT_BUILD").expect("REACT_BUILD must be set");

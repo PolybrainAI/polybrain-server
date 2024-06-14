@@ -6,6 +6,7 @@ Copyright Polybrain 2024
 
 */
 
+use log::error;
 use rocket::http::{ContentType, Status};
 use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
@@ -16,7 +17,7 @@ use uuid::Uuid;
 // Creates a random traceid and sends it to the STDOUT
 pub fn gen_trace() -> String {
     let trace_id = Uuid::new_v4().to_string();
-    println!("TRACE_ID: {trace_id}");
+    error!("TRACE_ID: {trace_id}");
     trace_id
 }
 

@@ -7,7 +7,7 @@ Copyright Polybrain 2024
 
 */
 
-use log::info;
+use log::{error, info};
 use reqwest;
 use rocket::http::CookieJar;
 use rocket::response::Redirect;
@@ -21,12 +21,12 @@ use crate::util::error::AuthorizationError;
 /// Redirects the user to the Auth0 logout page
 #[get("/auth0/logout", rank = 0)]
 pub async fn auth0_logout(cookies: &CookieJar<'_>) -> Redirect {
-    info!("Removing token");
+    info!("[auth0/logout]: removing user token");
     if let Some(cookie) = cookies.get("polybrain-session") {
         cookies.remove(cookie.to_owned());
     };
 
-    info!("Redirecting to Auth0 logout");
+    info!("[auth0/logout]: redirecting to Auth0 logout");
     let auth0_config = Auth0Config::load();
     let redirect_url = format!(
         "https://{AUTH0_DOMAIN}/v2/logout?client_id={AUTH0_CLIENT_ID}&returnTo={LOGOUT_URL}",
@@ -41,13 +41,13 @@ pub async fn auth0_logout(cookies: &CookieJar<'_>) -> Redirect {
 /// Auth0 redirects here when it's ready. We exchange temp code for a JWT
 #[get("/auth0/callback?<code>", rank = 0)]
 pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
-    println!("Got auth0 callback");
-
     let auth0_config = Auth0Config::load();
-
     let token_exchange_url = format!("https://{}/oauth/token", auth0_config.domain);
 
-    println!("Exchanging token at: {}", token_exchange_url);
+    info!(
+        "[auth0/callback]: fetching token at: {}",
+        token_exchange_url
+    );
     let token_body = TokenExchangeRequest {
         grant_type: "authorization_code".to_owned(),
         client_id: auth0_config.client_id,
@@ -62,21 +62,21 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
         .json(&token_body)
         .send()
         .await
-        .inspect_err(|err| eprintln!("error on token change (outer): {err}"))
+        .inspect_err(|err| error!("error on token change (outer): {err}"))
         .unwrap()
         .json()
         .await
-        .inspect_err(|err| eprintln!("error on token change (inner): {err}"))
+        .inspect_err(|err| error!("error on token change (inner): {err}"))
         .unwrap();
 
-    println!("Adding token to cookie jar");
+    info!("[auth0/callback]: adding token to user's cookie jar");
     cookies.add(("polybrain-session", token_response.access_token));
 
     let user_page = format!(
         "{}/portal",
         std::env::var("API_BASE").expect("API_BASE must be set.")
     );
-    println!("Redirecting to {user_page}");
+    info!("[auth0/callback]: redirecting to {user_page}");
     Redirect::to(user_page)
 }
 
@@ -92,7 +92,7 @@ pub async fn auth0_user_data(
                 serde_json::to_string_pretty(info).unwrap(),
             ))
         } else {
-            warn!("User has an invalid token. Logging out.");
+            warn!("[auth0/user-data]: user has an invalid token. Logging out.");
             Ok(TextOrRedirect::Redirect(Redirect::to(format!(
                 "{API_BASE}/auth0/logout",
                 API_BASE = std::env::var("API_BASE").expect("API_BASE must be set.")
@@ -108,7 +108,7 @@ pub async fn auth0_user_data(
 /// Redirects the user to the Auth0 login page
 #[get("/auth0/login", rank = 0)]
 pub async fn auth0_login() -> Redirect {
-    println!("Redirecting to Auth0 login");
+    info!("[auth0/login] redirecting to Auth0 login");
     let auth0_config = Auth0Config::load();
     let redirect_url = create_authorize_redirect_url(auth0_config);
 

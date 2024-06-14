@@ -8,7 +8,7 @@ Copyright Polybrain 2024
 */
 
 use chrono::{TimeZone, Utc};
-use log::info;
+use log::{error, info, warn};
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
@@ -53,10 +53,10 @@ pub async fn get_user_data(user_token: &str) -> Result<UserInfo, Box<dyn std::er
     };
 
     if let Some(user) = cache.get(user_token) {
-        println!("Found user in cache");
+        debug!("[get_user_data]: using cached user information");
         Ok(user.to_owned())
     } else {
-        println!("User does not exist in cache");
+        warn!("[get_user_data]: user does not exist in cache");
 
         // First, fetch preliminary info to get user's id
         let auth0_config = Auth0Config::load();
@@ -73,8 +73,8 @@ pub async fn get_user_data(user_token: &str) -> Result<UserInfo, Box<dyn std::er
         let user_preliminary_info: UserPreliminaryInfo =
             serde_json::from_str(&user_preliminary_info_raw)
                 .inspect_err(|_| {
-                    eprintln!(
-                        "Auth0 responded with an error or invalid format on UserPreliminaryInfo. Response is:\n{}",
+                    error!(
+                        "[get_user_data]: Auth0 responded with an error or invalid format on UserPreliminaryInfo. Response is:\n{}",
                         user_preliminary_info_raw
                     )
                 })?;
@@ -96,8 +96,8 @@ pub async fn get_user_data(user_token: &str) -> Result<UserInfo, Box<dyn std::er
 
         let mut user_info: UserInfo = serde_json::from_str(&user_complete_info_raw)
             .inspect_err(|_| {
-                eprintln!(
-                    "Auth0 management API responded with an error or invalid format on UserInfo fetch. Response is:\n{}",
+                error!(
+                    "[get_user_data]: Auth0 management API responded with an error or invalid format on UserInfo fetch. Response is:\n{}",
                     user_complete_info_raw
                 )
             })
@@ -134,22 +134,22 @@ pub async fn get_auth0_management_token() -> String {
     let mut token_container: Option<Auth0ManagementTokenSave> = None;
 
     if token_save_path.exists() {
-        info!("A token already exists");
-
         let token_file = File::open(token_save_path).expect("Could not read Auth0 token file");
         let token_save: Auth0ManagementTokenSave = serde_json::from_reader(token_file)
             .expect("The Auth0 management token save is misformed");
         let expiration_date = Utc.timestamp_micros(token_save.expires as i64).unwrap();
 
         if expiration_date < Utc::now() + Duration::from_secs(5 * 60) {
-            warn!("Auth0 management token has expired")
+            warn!("[get_auth0_management_token]: Auth0 management token has expired")
         } else {
             info!(
-                "Using existing Auth0 management token; expires in {} minutes",
+                "[get_auth0_management_token]: using existing Auth0 management token; expires in {} minutes",
                 (expiration_date - Utc::now()).num_minutes()
             );
             token_container = Some(token_save);
         }
+    } else {
+        warn!("[get_auth0_management_token]: no management token exists")
     }
 
     if token_container.is_none() {
@@ -179,8 +179,8 @@ pub async fn get_auth0_management_token() -> String {
         let token_response: Auth0ManagementTokenResponse =
             serde_json::from_str(&token_response_raw)
                 .map_err(|_| {
-                    println!(
-                "Failed to serialize response into Auth0ManagementTokenResponse:\nResponse is:\n{}",
+                    error!(
+                "[get_auth0_management_token]: failed to serialize response into Auth0ManagementTokenResponse:\nResponse is:\n{}",
                 token_response_raw
             )
                 })
@@ -200,7 +200,7 @@ pub async fn get_auth0_management_token() -> String {
 
         token_container = Some(token_save);
 
-        info!("Refreshed Auth0 management token");
+        info!("[get_auth0_management_token]: refreshed Auth0 management token");
     }
 
     token_container.unwrap().token
