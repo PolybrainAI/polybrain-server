@@ -26,6 +26,7 @@ use rocket::{response::Redirect, State};
 
 use super::types::{CredentialType, UserCredentialView};
 
+/// Encrypts and uploads credentials
 #[allow(private_interfaces)]
 #[post("/credentials/upload", data = "<data>")]
 pub async fn credentials_upload(
@@ -80,9 +81,11 @@ pub async fn credentials_upload(
     Ok("{\"success\": true}".to_owned())
 }
 
+/// To be removed; CORS fix
 #[options("/credentials/upload")]
 pub async fn credentials_upload_preflight() {}
 
+/// Previews which credentials have been uploaded
 #[get("/credentials/preview")]
 pub async fn credentials_preview(
     cookies: &CookieJar<'_>,
@@ -113,6 +116,8 @@ pub async fn credentials_preview(
     Ok(serde_json::to_string_pretty(&user_preview).unwrap())
 }
 
+/// Deletes the user and their credentials from the database. Also removes from
+/// Auth0 DB.
 #[get("/user/delete-self")]
 pub async fn user_delete_self(
     cookies: &CookieJar<'_>,

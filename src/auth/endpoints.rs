@@ -80,6 +80,7 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     Redirect::to(user_page)
 }
 
+/// Gets basic information about the current user
 #[get("/auth0/user-data", rank = 0)]
 pub async fn auth0_user_data(
     cookies: &CookieJar<'_>,
