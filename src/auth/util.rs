@@ -13,12 +13,14 @@ use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::tokio::time::Duration;
-use rocket::Request;
 use rocket::Response;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use rocket::http::Status;
+use rocket::request::{self, FromRequest, Request, Outcome};
+
 
 use crate::auth::types::{
     Auth0Config, Auth0ManagementTokenRequest, Auth0ManagementTokenResponse,
@@ -40,6 +42,7 @@ pub fn create_authorize_redirect_url(auth0_config: Auth0Config) -> String {
 
 /// Gets Auth0 stored user data
 pub async fn get_user_data(user_token: &str) -> Result<UserInfo, Box<dyn std::error::Error>> {
+    println!("fetching user data...");
     // Load cache
     let mut cache: HashMap<String, UserInfo> = if Path::new(USER_CACHE_PATH).exists() {
         let mut file = File::open(USER_CACHE_PATH).expect("Failed to open cache file to read");
@@ -142,7 +145,7 @@ pub async fn get_auth0_management_token() -> String {
         if expiration_date < Utc::now() + Duration::from_secs(5 * 60) {
             warn!("[get_auth0_management_token]: Auth0 management token has expired")
         } else {
-            info!(
+            println!(
                 "[get_auth0_management_token]: using existing Auth0 management token; expires in {} minutes",
                 (expiration_date - Utc::now()).num_minutes()
             );
@@ -200,7 +203,7 @@ pub async fn get_auth0_management_token() -> String {
 
         token_container = Some(token_save);
 
-        info!("[get_auth0_management_token]: refreshed Auth0 management token");
+        println!("[get_auth0_management_token]: refreshed Auth0 management token");
     }
 
     token_container.unwrap().token
@@ -217,16 +220,44 @@ impl Fairing for Cors {
         }
     }
 
-    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        response.set_header(Header::new(
-            "Access-Control-Allow-Origin",
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+
+        let allowed_origins = [
             "http://localhost:3000",
-        ));
+            "https://polybrain.xyz",
+            "https://cad.onshape.com",
+        ];
+
+        if let Some(origin) = request.headers().get_one("Origin") {
+            if allowed_origins.contains(&origin) {
+                response.set_header(Header::new("Access-Control-Allow-Origin", origin));
+                response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+            }
+        }
+
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",
             "POST, GET, PATCH, OPTIONS",
         ));
-        response.set_header(Header::new("Access-Control-Allow-Headers", "Content-Type"));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "Authorization, Content-Type"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
+
+
+pub struct AuthToken(pub String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AuthToken {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+        if let Some(auth_header) = request.headers().get_one("Authorization") {
+            if auth_header.starts_with("Bearer ") {
+                let token = auth_header.trim_start_matches("Bearer ").to_string();
+                return Outcome::Success(AuthToken(token));
+            }
+        }
+        Outcome::Error((Status::Unauthorized, ()))
     }
 }

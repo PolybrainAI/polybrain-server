@@ -21,12 +21,12 @@ use crate::util::error::AuthorizationError;
 /// Redirects the user to the Auth0 logout page
 #[get("/auth0/logout", rank = 0)]
 pub async fn auth0_logout(cookies: &CookieJar<'_>) -> Redirect {
-    info!("[auth0/logout]: removing user token");
+    println!("[auth0/logout]: removing user token");
     if let Some(cookie) = cookies.get("polybrain-session") {
         cookies.remove(cookie.to_owned());
     };
 
-    info!("[auth0/logout]: redirecting to Auth0 logout");
+    println!("[auth0/logout]: redirecting to Auth0 logout");
     let auth0_config = Auth0Config::load();
     let redirect_url = format!(
         "https://{AUTH0_DOMAIN}/v2/logout?client_id={AUTH0_CLIENT_ID}&returnTo={LOGOUT_URL}",
@@ -44,7 +44,7 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
     let auth0_config = Auth0Config::load();
     let token_exchange_url = format!("https://{}/oauth/token", auth0_config.domain);
 
-    info!(
+    println!(
         "[auth0/callback]: fetching token at: {}",
         token_exchange_url
     );
@@ -69,14 +69,14 @@ pub async fn auth0_callback(cookies: &CookieJar<'_>, code: &str) -> Redirect {
         .inspect_err(|err| error!("error on token change (inner): {err}"))
         .unwrap();
 
-    info!("[auth0/callback]: adding token to user's cookie jar");
+    println!("[auth0/callback]: adding token to user's cookie jar");
     cookies.add(("polybrain-session", token_response.access_token));
 
     let user_page = format!(
         "{}/portal",
         std::env::var("API_BASE").expect("API_BASE must be set.")
     );
-    info!("[auth0/callback]: redirecting to {user_page}");
+    println!("[auth0/callback]: redirecting to {user_page}");
     Redirect::to(user_page)
 }
 
@@ -109,7 +109,7 @@ pub async fn auth0_user_data(
 /// Redirects the user to the Auth0 login page
 #[get("/auth0/login", rank = 0)]
 pub async fn auth0_login() -> Redirect {
-    info!("[auth0/login] redirecting to Auth0 login");
+    println!("[auth0/login] redirecting to Auth0 login");
     let auth0_config = Auth0Config::load();
     let redirect_url = create_authorize_redirect_url(auth0_config);
 

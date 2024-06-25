@@ -73,7 +73,7 @@ impl MongoUtil {
             .await
             .expect("Fatal MongoDB error on user query");
         if user.is_some() {
-            info!("successfully fetched user with id {user_id}");
+            println!("successfully fetched user with id {user_id}");
         } else {
             warn!("user with id {user_id} does not exist in MongoDB");
         }
@@ -98,7 +98,7 @@ impl MongoUtil {
             .await
             .expect("Fatal MongoDB error on user query");
         if result.deleted_count > 0 {
-            info!("Successfully deleted user {user_id} contents from MongoDB");
+            println!("Successfully deleted user {user_id} contents from MongoDB");
             true
         } else {
             warn!("Unable to delete user {user_id} contents from MongoDB. Does the user exist?");
@@ -151,7 +151,7 @@ impl MongoUtil {
             .replace_one(filter, &user, None)
             .await?;
 
-        info!("updated user. result: {:?}", replace_result);
+        println!("updated user. result: {:?}", replace_result);
 
         Ok(())
     }
