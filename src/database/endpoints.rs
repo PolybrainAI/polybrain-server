@@ -52,7 +52,7 @@ pub async fn credentials_upload(
         if onshape_access.len() != 24 {
             return Err(BadRequest::new("OnShape Access Key has an invalid format"));
         }
-        info!("adding OnShape Access key to {}", user_info.email);
+        println!("adding OnShape Access key to {}", user_info.email);
         credential_uploads.push(CredentialType::OnshapeAccess(onshape_access.to_owned()));
     }
     if let Some(onshape_secret) = &data.onshape_secret {
@@ -60,14 +60,14 @@ pub async fn credentials_upload(
             return Err(BadRequest::new("OnShape Secret Key has an invalid format"));
         }
 
-        info!("adding OnShape Secret key to {}", user_info.email);
+        println!("adding OnShape Secret key to {}", user_info.email);
         credential_uploads.push(CredentialType::OnshapeSecret(onshape_secret.to_owned()));
     }
     if let Some(openai_api) = &data.openai_api {
         if openai_api.len() != 51 {
             return Err(BadRequest::new("OpenAI API key has an invalid format"));
         }
-        info!("adding OpenAI API key to {}", user_info.email);
+        println!("adding OpenAI API key to {}", user_info.email);
         credential_uploads.push(CredentialType::OpenAiAPI(openai_api.to_owned()));
     }
 
@@ -156,7 +156,7 @@ pub async fn user_delete_self(
 
     match delete_response.status() {
         StatusCode::NO_CONTENT => {
-            info!("Successfully deleted user {} from Auth0", user_info.user_id)
+            println!("Successfully deleted user {} from Auth0", user_info.user_id)
         }
         _ => {
             let status_code = delete_response.status().as_u16();
@@ -186,7 +186,7 @@ pub async fn user_delete_self(
 
         serde_json::to_writer_pretty(file_write, &cache)
             .expect("Failed to write updated user cache back to file");
-        info!("Successfully removed user from cache")
+        println!("Successfully removed user from cache")
     }
 
     Ok(Redirect::to(format!(

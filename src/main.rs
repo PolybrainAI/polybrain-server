@@ -16,6 +16,7 @@ use rocket::{fs::NamedFile, tokio::sync::Mutex};
 mod auth;
 mod database;
 mod util;
+mod api;
 
 /// Redirect all requests with no match to react for client-side routing
 #[get("/<_..>", rank = 5)]
@@ -60,6 +61,13 @@ async fn rocket() -> _ {
                 database::endpoints::credentials_preview,
                 database::endpoints::user_delete_self,
             ],
+        )
+        .mount(
+            "/api",
+            routes![
+                api::audio::audio_speak,
+                api::audio::audio_speak_preflight
+            ]
         )
         .mount("/static", routes![files,])
         .mount("/", routes![fallback_url,])
