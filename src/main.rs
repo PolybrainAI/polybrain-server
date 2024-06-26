@@ -36,7 +36,7 @@ async fn files(file: PathBuf) -> Option<NamedFile> {
     }
     // otherwise, serve react
     println!("No matching file, serving react");
-    return NamedFile::open(build_index.join("index.html")).await.ok();
+    NamedFile::open(build_index.join("index.html")).await.ok()
 }
 
 #[launch]

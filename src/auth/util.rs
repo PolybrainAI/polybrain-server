@@ -8,7 +8,7 @@ Copyright Polybrain 2024
 */
 
 use chrono::{TimeZone, Utc};
-use log::{error, info, warn};
+use log::{error, warn};
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;

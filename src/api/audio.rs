@@ -1,16 +1,15 @@
-use std::io::Cursor;
 
-use futures::TryFutureExt;
-use log::info;
+
+
+
 use rocket::http::hyper::body::Bytes;
-use rocket::http::ContentType;
-use rocket::response::stream::{ByteStream, ReaderStream};
-use rocket::{http::CookieJar, serde::json::Json, tokio::sync::Mutex};
-use rocket::{response::Redirect, State};
+
+use rocket::response::stream::{ByteStream};
+use rocket::{serde::json::Json, tokio::sync::Mutex};
+use rocket::{State};
 use serde_json::json;
 
 use crate::api::types::SpeakRequest;
-use crate::auth;
 use crate::auth::encryption::_decrypt;
 use crate::auth::types::UserInfo;
 use crate::auth::util::{get_user_data, AuthToken};
@@ -29,8 +28,8 @@ pub async fn audio_speak(
     // ) -> Result<String, BadRequest> {
     println!("matched endpoint");
 
-    let user_info: UserInfo;
-    user_info = get_user_data(&auth_token.0).await.unwrap();
+    
+    let user_info: UserInfo = get_user_data(&auth_token.0).await.unwrap();
 
     println!("got user data?");
 
@@ -64,7 +63,7 @@ pub async fn audio_speak(
     });
     println!("sending json payload to OpenAI: {:#}", payload);
     let mut response = client
-        .post(format!("https://api.openai.com/v1/audio/speech"))
+        .post("https://api.openai.com/v1/audio/speech".to_string())
         .bearer_auth(openai_key)
         .json(&payload)
         .send()

@@ -20,7 +20,7 @@ use crate::{
     auth::util::{get_auth0_management_token, get_user_data, USER_CACHE_PATH},
     util::error::BadRequest,
 };
-use log::{info, warn};
+use log::{warn};
 use rocket::{http::CookieJar, serde::json::Json, tokio::sync::Mutex};
 use rocket::{response::Redirect, State};
 

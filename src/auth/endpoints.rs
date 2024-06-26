@@ -7,7 +7,7 @@ Copyright Polybrain 2024
 
 */
 
-use log::{error, info};
+use log::{error};
 use reqwest;
 use rocket::http::CookieJar;
 use rocket::response::Redirect;
