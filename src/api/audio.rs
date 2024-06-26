@@ -4,10 +4,10 @@ use futures::TryFutureExt;
 use log::info;
 use rocket::http::hyper::body::Bytes;
 use rocket::http::ContentType;
+use rocket::response::stream::{ByteStream, ReaderStream};
 use rocket::{http::CookieJar, serde::json::Json, tokio::sync::Mutex};
 use rocket::{response::Redirect, State};
 use serde_json::json;
-use rocket::response::stream::{ByteStream, ReaderStream};
 
 use crate::api::types::SpeakRequest;
 use crate::auth;
@@ -17,9 +17,8 @@ use crate::auth::util::{get_user_data, AuthToken};
 use crate::database::util::MongoUtil;
 use crate::util::error::BadRequest;
 
-
 #[options("/audio/speak")]
-pub async fn audio_speak_preflight(){} // CORS fix
+pub async fn audio_speak_preflight() {} // CORS fix
 
 #[post("/audio/speak", data = "<data>")]
 pub async fn audio_speak(
@@ -27,7 +26,7 @@ pub async fn audio_speak(
     data: Json<SpeakRequest>,
     mongo_util: &State<Mutex<MongoUtil>>,
 ) -> Result<ByteStream![Bytes], BadRequest> {
-// ) -> Result<String, BadRequest> {
+    // ) -> Result<String, BadRequest> {
     println!("matched endpoint");
 
     let user_info: UserInfo;
@@ -46,14 +45,13 @@ pub async fn audio_speak(
                 Some(key) => {
                     openai_key = _decrypt(&key);
                 }
-                None => {
-                    return Err(BadRequest::new("Account has no OpenAI API key loaded"))
-                }
+                None => return Err(BadRequest::new("Account has no OpenAI API key loaded")),
             }
-
         }
         None => {
-            return Err(BadRequest::new("You must load an OpenAI API key before referencing the speak api"));
+            return Err(BadRequest::new(
+                "You must load an OpenAI API key before referencing the speak api",
+            ));
         }
     }
 
@@ -65,24 +63,27 @@ pub async fn audio_speak(
         "voice": "alloy",
     });
     println!("sending json payload to OpenAI: {:#}", payload);
-    let mut response = client.post(format!("https://api.openai.com/v1/audio/speech"))
+    let mut response = client
+        .post(format!("https://api.openai.com/v1/audio/speech"))
         .bearer_auth(openai_key)
         .json(&payload)
         .send()
-        .await.expect("failed to call openai speech api");
-
+        .await
+        .expect("failed to call openai speech api");
 
     if !response.status().is_success() {
-        println!("OpenAI Speech API returned error:\n{}", response.text().await.unwrap());
-        return Err(BadRequest::new("Internal Error")) // TODO: fix error handling
+        println!(
+            "OpenAI Speech API returned error:\n{}",
+            response.text().await.unwrap()
+        );
+        return Err(BadRequest::new("Internal Error")); // TODO: fix error handling
     }
-    
-    let stream = ByteStream!{
+
+    let stream = ByteStream! {
         while let Some(chunk) = response.chunk().await.unwrap() {
             yield chunk;
         };
 
     };
     Ok(stream)
-
 }

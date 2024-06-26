@@ -12,15 +12,14 @@ use log::{error, info, warn};
 use reqwest;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
+use rocket::http::Status;
+use rocket::request::{self, FromRequest, Outcome, Request};
 use rocket::tokio::time::Duration;
 use rocket::Response;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use rocket::http::Status;
-use rocket::request::{self, FromRequest, Request, Outcome};
-
 
 use crate::auth::types::{
     Auth0Config, Auth0ManagementTokenRequest, Auth0ManagementTokenResponse,
@@ -221,7 +220,6 @@ impl Fairing for Cors {
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-
         let allowed_origins = [
             "http://localhost:3000",
             "https://polybrain.xyz",
@@ -239,11 +237,13 @@ impl Fairing for Cors {
             "Access-Control-Allow-Methods",
             "POST, GET, PATCH, OPTIONS",
         ));
-        response.set_header(Header::new("Access-Control-Allow-Headers", "Authorization, Content-Type"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type",
+        ));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
 }
-
 
 pub struct AuthToken(pub String);
 
