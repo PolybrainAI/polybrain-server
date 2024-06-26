@@ -13,27 +13,30 @@ use std::path::{Path, PathBuf};
 
 use dotenv::dotenv;
 use rocket::{fs::NamedFile, tokio::sync::Mutex};
+mod api;
 mod auth;
 mod database;
 mod util;
-mod api;
-
-/// Redirect all requests with no match to react for client-side routing
-#[get("/<_..>", rank = 5)]
-async fn fallback_url() -> Option<NamedFile> {
-    let build_env = std::env::var("REACT_BUILD").expect("REACT_BUILD must be set");
-    let build_index = Path::new(build_env.as_str());
-    NamedFile::open(build_index.join("index.html")).await.ok()
-}
 
 /// Serve files from react dist
 #[get("/<file..>", rank = 4)]
 async fn files(file: PathBuf) -> Option<NamedFile> {
     let build_env = std::env::var("REACT_BUILD").expect("REACT_BUILD must be set");
     let build_index = Path::new(build_env.as_str());
-    NamedFile::open(build_index.join("static/").join(file))
-        .await
-        .ok()
+
+    // serve files if requested
+    if let Ok(filepath) = build_index.join(file).canonicalize() {
+        if filepath.exists()
+            && filepath.is_file()
+            && filepath.starts_with(build_index.canonicalize().unwrap())
+        {
+            println!("Serving file: {:?}", &filepath);
+            return NamedFile::open(filepath).await.ok();
+        }
+    }
+    // otherwise, serve react
+    println!("No matching file, serving react");
+    return NamedFile::open(build_index.join("index.html")).await.ok();
 }
 
 #[launch]
@@ -64,12 +67,8 @@ async fn rocket() -> _ {
         )
         .mount(
             "/api",
-            routes![
-                api::audio::audio_speak,
-                api::audio::audio_speak_preflight
-            ]
+            routes![api::audio::audio_speak, api::audio::audio_speak_preflight],
         )
-        .mount("/static", routes![files,])
-        .mount("/", routes![fallback_url,])
+        .mount("/", routes![files,])
         .manage(Mutex::new(mongo_util))
 }
