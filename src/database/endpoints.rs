@@ -20,7 +20,7 @@ use crate::{
     auth::util::{get_auth0_management_token, get_user_data, USER_CACHE_PATH},
     util::error::BadRequest,
 };
-use log::{warn};
+use log::warn;
 use rocket::{http::CookieJar, serde::json::Json, tokio::sync::Mutex};
 use rocket::{response::Redirect, State};
 
@@ -64,7 +64,7 @@ pub async fn credentials_upload(
         credential_uploads.push(CredentialType::OnshapeSecret(onshape_secret.to_owned()));
     }
     if let Some(openai_api) = &data.openai_api {
-        if openai_api.len() != 51 {
+        if !openai_api.starts_with("sk-") {
             return Err(BadRequest::new("OpenAI API key has an invalid format"));
         }
         println!("adding OpenAI API key to {}", user_info.email);

@@ -1,12 +1,8 @@
-
-
-
-
 use rocket::http::hyper::body::Bytes;
 
-use rocket::response::stream::{ByteStream};
+use rocket::response::stream::ByteStream;
+use rocket::State;
 use rocket::{serde::json::Json, tokio::sync::Mutex};
-use rocket::{State};
 use serde_json::json;
 
 use crate::api::types::SpeakRequest;
@@ -28,7 +24,6 @@ pub async fn audio_speak(
     // ) -> Result<String, BadRequest> {
     println!("matched endpoint");
 
-    
     let user_info: UserInfo = get_user_data(&auth_token.0).await.unwrap();
 
     println!("got user data?");
