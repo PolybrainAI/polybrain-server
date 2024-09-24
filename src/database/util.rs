@@ -16,7 +16,7 @@ use mongodb::{
 };
 
 use crate::auth::encryption::encrypt;
-use log::{warn};
+use log::warn;
 
 use super::types::{Auth0Manager, CredentialType, UserDocument};
 
